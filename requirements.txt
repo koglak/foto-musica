@@ -1,7 +1,6 @@
-python-multipart
 fastapi
 uvicorn
 mido
-pillow
 numpy
-opencv-python
+Pillow
+opencv-python-headless
