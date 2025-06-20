@@ -6,6 +6,7 @@ from mido import Message, MidiFile, MidiTrack
 import uuid
 import cv2
 from io import BytesIO
+import random
 
 app = FastAPI()
 
@@ -15,7 +16,12 @@ INSTRUMENTS = {
     "strings": 49,
     "synth": 81,
     "guitar": 25,
-    "bass": 34
+    "bass": 34,
+    "organ": 19,
+    "choir": 52,
+    "flute": 73,
+    "trumpet": 56,
+    "harp": 46
 }
 
 PITCH_RANGES = {
@@ -28,6 +34,28 @@ RESOLUTIONS = {
     "coarse": 16,
     "medium": 32,
     "fine": 64
+}
+
+SCALES = {
+    "major":     [0, 2, 4, 5, 7, 9, 11],
+    "minor":     [0, 2, 3, 5, 7, 8, 10],
+    "phrygian":  [0, 1, 3, 5, 7, 8, 10],
+    "dorian":    [0, 2, 3, 5, 7, 9, 10],
+    "lydian":    [0, 2, 4, 6, 7, 9, 11],
+    "mixolydian": [0, 2, 4, 5, 7, 9, 10],
+    "locrian":   [0, 1, 3, 5, 6, 8, 10]
+}
+
+MOOD_SETTINGS = {
+    "mystic":      {"instrument": "synth",   "pitch": "low",  "tempo": 60,  "scale": "phrygian"},
+    "funny":   {"instrument": "guitar",  "pitch": "mid",  "tempo": 110, "scale": "major"},
+    "sad":     {"instrument": "strings", "pitch": "mid",  "tempo": 80,  "scale": "minor"},
+    "classic":      {"instrument": "piano",   "pitch": "high", "tempo": 90,  "scale": "major"},
+    "horror":       {"instrument": "choir",   "pitch": "low",  "tempo": 50,  "scale": "locrian"},
+    "romance":    {"instrument": "harp",    "pitch": "mid",  "tempo": 70,  "scale": "dorian"},
+    "epic":        {"instrument": "trumpet", "pitch": "high", "tempo": 140, "scale": "mixolydian"},
+    "impromptu":   {"instrument": "organ",   "pitch": "mid",  "tempo": 100, "scale": "lydian"},
+    "peaceful":    {"instrument": "flute",   "pitch": "high", "tempo": 75,  "scale": "major"}
 }
 
 
@@ -155,3 +183,60 @@ async def photo_to_music_rules(image: UploadFile = File(...)):
             "X-Symmetry": str(round(symmetry, 3))
         }
     )
+
+
+@app.post("/photo-to-music-by-mood")
+async def photo_to_music_by_mood(
+    image: UploadFile = File(...),
+    resolution: str = Form("medium"),
+    mood: str = Form("mystic")
+):
+    config = MOOD_SETTINGS.get(mood.lower(), MOOD_SETTINGS["mystic"])
+    instrument = config["instrument"]
+    pitch = config["pitch"]
+    tempo = config["tempo"]
+    scale = config["scale"]
+
+    img = Image.open(image.file).convert("L")
+    size = RESOLUTIONS.get(resolution, 32)
+    img = img.resize((size, size))
+    pixels = np.array(img)
+
+    min_pitch, max_pitch = PITCH_RANGES.get(pitch, (40, 80))
+    selected_instrument = INSTRUMENTS.get(instrument, 1)
+    scale_intervals = SCALES.get(scale, SCALES["major"])
+
+    scale_notes = [n for n in range(
+        min_pitch, max_pitch + 1) if (n % 12) in scale_intervals]
+    if not scale_notes:
+        scale_notes = list(range(min_pitch, max_pitch + 1))
+
+    mid = MidiFile()
+    track = MidiTrack()
+    mid.tracks.append(track)
+    track.append(Message('program_change',
+                 program=selected_instrument, time=0))
+
+    ticks_per_beat = mid.ticks_per_beat
+    tick_duration = int((60 / tempo) * ticks_per_beat * 0.5)
+
+    for y in range(pixels.shape[0]):
+        for x in range(pixels.shape[1]):
+            brightness = pixels[y, x]
+            velocity = int((brightness / 255) * 100) + 27
+            idx = int((brightness / 255) * (len(scale_notes) - 1))
+            note = scale_notes[idx]
+
+            if random.random() > 0.7:
+                note = random.choice(scale_notes)
+
+            track.append(Message('note_on', note=note,
+                         velocity=velocity, time=0))
+            track.append(Message('note_off', note=note,
+                         velocity=velocity, time=tick_duration))
+
+    midi_bytes = BytesIO()
+    mid.save(file=midi_bytes)
+    midi_bytes.seek(0)
+
+    return StreamingResponse(midi_bytes, media_type="audio/midi", headers={"Content-Disposition": "attachment; filename=photo-mood-music.mid"})
