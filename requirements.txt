@@ -4,3 +4,4 @@ mido
 numpy
 Pillow
 opencv-python-headless
+python-multipart
