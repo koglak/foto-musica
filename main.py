@@ -3,12 +3,20 @@ from fastapi.responses import StreamingResponse
 from PIL import Image
 import numpy as np
 from mido import Message, MidiFile, MidiTrack
-import uuid
+from fastapi.middleware.cors import CORSMiddleware
 import cv2
 from io import BytesIO
 import random
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Kullanıcı seçeneklerine varsayılanlar
 INSTRUMENTS = {
